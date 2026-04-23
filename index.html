@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+  <meta name="apple-mobile-web-app-title" content="BPM"/>
+  <link rel="apple-touch-icon" href="icon.svg"/>
+  <link rel="manifest" href="manifest.json"/>
+  <title>BPM Detector</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --accent: #6c63ff;
+      --accent2: #3ecfcf;
+      --bg: #f7f8fc;
+      --card: #ffffff;
+      --text: #1a1a2e;
+      --muted: #8b8fa8;
+      --border: #e8eaf0;
+      --danger: #ff6b6b;
+      --success: #51cf66;
+      --warn: #ffd43b;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: env(safe-area-inset-top, 20px) env(safe-area-inset-right, 16px)
+               env(safe-area-inset-bottom, 20px) env(safe-area-inset-left, 16px);
+      min-height: 100dvh;
+    }
+
+    /* ── Header ── */
+    header {
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 16px 0 12px;
+    }
+    .logo {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .logo svg { width: 18px; height: 18px; fill: white; }
+    header h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+
+    /* ── Card ── */
+    .card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--card);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 4px 24px rgba(108,99,255,.08);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      background: var(--bg);
+      border-radius: 12px;
+      padding: 4px;
+      gap: 4px;
+    }
+    .tab {
+      padding: 10px;
+      border: none;
+      border-radius: 9px;
+      background: transparent;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all .2s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .tab.active {
+      background: var(--card);
+      color: var(--accent);
+      box-shadow: 0 2px 8px rgba(108,99,255,.15);
+    }
+
+    /* ── BPM Display ── */
+    .bpm-display {
+      text-align: center;
+      padding: 12px 0;
+    }
+    .bpm-number {
+      font-size: clamp(80px, 22vw, 120px);
+      font-weight: 800;
+      letter-spacing: -4px;
+      line-height: 1;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      transition: opacity .15s;
+    }
+    .bpm-number.dim { opacity: .25; }
+    .bpm-label {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 3px;
+      color: var(--muted);
+      margin-top: 2px;
+      text-transform: uppercase;
+    }
+
+    /* ── Confidence bar ── */
+    .confidence-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .confidence-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .confidence-bar-bg {
+      height: 8px;
+      background: var(--border);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+    .confidence-bar-fill {
+      height: 100%;
+      border-radius: 99px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      transition: width .4s ease;
+      width: 0%;
+    }
+
+    /* ── Status dot ── */
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--muted);
+      min-height: 20px;
+    }
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+    .dot.active { background: var(--success); animation: pulse 1.4s ease-in-out infinite; }
+    .dot.error  { background: var(--danger); }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: .6; transform: scale(1.3); }
+    }
+
+    /* ── Beat flash overlay ── */
+    .beat-flash {
+      position: fixed; inset: 0; pointer-events: none;
+      background: rgba(108,99,255,.06);
+      opacity: 0;
+      z-index: 10;
+    }
+    .beat-flash.flash { animation: flash .12s ease-out; }
+    @keyframes flash { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+    /* ── Mic button ── */
+    .mic-btn {
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 14px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: all .15s;
+      -webkit-tap-highlight-color: transparent;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: white;
+      box-shadow: 0 4px 16px rgba(108,99,255,.3);
+    }
+    .mic-btn.recording {
+      background: linear-gradient(135deg, var(--danger), #ff8e53);
+      box-shadow: 0 4px 16px rgba(255,107,107,.3);
+    }
+    .mic-btn:active { transform: scale(.97); }
+
+    /* ── Tap button ── */
+    .tap-btn {
+      flex: 1;
+      width: 100%;
+      min-height: 140px;
+      border: 3px solid var(--border);
+      border-radius: 20px;
+      background: var(--bg);
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all .08s;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .tap-btn:active,
+    .tap-btn.tapped {
+      background: linear-gradient(135deg, rgba(108,99,255,.08), rgba(62,207,207,.08));
+      border-color: var(--accent);
+      transform: scale(.97);
+    }
+    .tap-icon { font-size: 36px; line-height: 1; }
+    .tap-hint { font-size: 13px; color: var(--muted); font-weight: 500; }
+
+    /* ── Tap actions row ── */
+    .tap-actions {
+      display: flex;
+      gap: 10px;
+    }
+    .reset-btn {
+      flex: 1;
+      padding: 12px;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      background: transparent;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all .15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .reset-btn:active { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Tap count pills ── */
+    .tap-count {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      font-weight: 500;
+    }
+
+    /* ── Panel visibility ── */
+    .panel { display: none; flex-direction: column; gap: 16px; flex: 1; }
+    .panel.active { display: flex; }
+  </style>
+</head>
+<body>
+
+<div class="beat-flash" id="beatFlash"></div>
+
+<header>
+  <div class="logo">
+    <svg viewBox="0 0 20 20"><path d="M9 3v9.26A3 3 0 1 0 11 15V7h4V3H9z"/></svg>
+  </div>
+  <h1>BPM Detector</h1>
+</header>
+
+<div class="card">
+
+  <div class="tabs">
+    <button class="tab active" id="tabMic" onclick="switchTab('mic')">🎙 Mikrofon</button>
+    <button class="tab"        id="tabTap" onclick="switchTab('tap')">👆 Tippen</button>
+  </div>
+
+  <div class="bpm-display">
+    <div class="bpm-number dim" id="bpmNumber">--</div>
+    <div class="bpm-label">BPM</div>
+  </div>
+
+  <div class="confidence-wrap">
+    <div class="confidence-row">
+      <span>Konfidenz</span>
+      <span id="confidenceLabel">–</span>
+    </div>
+    <div class="confidence-bar-bg">
+      <div class="confidence-bar-fill" id="confidenceBar"></div>
+    </div>
+  </div>
+
+  <!-- MIC panel -->
+  <div class="panel active" id="panelMic">
+    <div class="status-row">
+      <div class="dot" id="micDot"></div>
+      <span id="micStatus">Bereit – Starten drücken</span>
+    </div>
+    <button class="mic-btn" id="micBtn" onclick="toggleMic()">
+      <span id="micBtnIcon">▶</span>
+      <span id="micBtnLabel">Starten</span>
+    </button>
+  </div>
+
+  <!-- TAP panel -->
+  <div class="panel" id="panelTap">
+    <button class="tap-btn" id="tapBtn" onpointerdown="handleTap()">
+      <span class="tap-icon">♩</span>
+      <span>TIPPE IM TAKT</span>
+      <span class="tap-hint" id="tapHint">Mindestens 2 Taps nötig</span>
+    </button>
+    <div class="tap-count" id="tapCount"></div>
+    <div class="tap-actions">
+      <button class="reset-btn" onclick="resetTap()">↺ Zurücksetzen</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+//  State
+// ─────────────────────────────────────────────
+let currentTab = 'mic';
+let audioCtx, analyser, micStream, animFrame;
+let isRecording = false;
+
+const prevFFT = new Float32Array(2048);
+const FLUX_BUF_SIZE = 512;
+const fluxBuffer = new Float32Array(FLUX_BUF_SIZE);
+let fluxHead = 0;
+let fluxFilled = 0;
+
+const BPM_SMOOTH = 5;
+const bpmHistory = [];
+let lastBpm = null;
+
+// Tap state
+const TAP_BUF = 8;
+const tapIntervals = [];
+let lastTapTime = null;
+let tapCount = 0;
+
+// ─────────────────────────────────────────────
+//  Tab switching
+// ─────────────────────────────────────────────
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tabMic').classList.toggle('active', tab === 'mic');
+  document.getElementById('tabTap').classList.toggle('active', tab === 'tap');
+  document.getElementById('panelMic').classList.toggle('active', tab === 'mic');
+  document.getElementById('panelTap').classList.toggle('active', tab === 'tap');
+  if (tab === 'tap') {
+    stopMic();
+    refreshTapDisplay();
+  }
+}
+
+// ─────────────────────────────────────────────
+//  BPM / Confidence display
+// ─────────────────────────────────────────────
+function showBpm(bpm, confidence) {
+  const el = document.getElementById('bpmNumber');
+  const bar = document.getElementById('confidenceBar');
+  const label = document.getElementById('confidenceLabel');
+  if (bpm === null) {
+    el.textContent = '--';
+    el.classList.add('dim');
+    bar.style.width = '0%';
+    label.textContent = '–';
+    return;
+  }
+  el.textContent = Math.round(bpm);
+  el.classList.remove('dim');
+  const pct = Math.round(confidence * 100);
+  bar.style.width = pct + '%';
+  if (pct >= 75)      { label.textContent = 'Gut'; bar.style.background = 'linear-gradient(90deg,#51cf66,#38d9a9)'; }
+  else if (pct >= 45) { label.textContent = 'Mittel'; bar.style.background = 'linear-gradient(90deg,#ffd43b,#ffa94d)'; }
+  else                { label.textContent = 'Schwach'; bar.style.background = 'linear-gradient(90deg,#ff6b6b,#ffa94d)'; }
+}
+
+function flashBeat() {
+  const el = document.getElementById('beatFlash');
+  el.classList.remove('flash');
+  void el.offsetWidth;
+  el.classList.add('flash');
+}
+
+// ─────────────────────────────────────────────
+//  MIC – Web Audio pipeline
+// ─────────────────────────────────────────────
+async function toggleMic() {
+  if (isRecording) { stopMic(); return; }
+  setMicStatus('Mikrofon wird aktiviert…', '');
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    startMic(stream);
+  } catch (err) {
+    setMicStatus('Kein Mikrofon-Zugriff: ' + err.message, 'error');
+  }
+}
+
+function startMic(stream) {
+  micStream = stream;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const source = audioCtx.createMediaStreamSource(stream);
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 2048;
+  analyser.smoothingTimeConstant = 0.0;
+  source.connect(analyser);
+
+  prevFFT.fill(0);
+  fluxBuffer.fill(0);
+  fluxHead = 0;
+  fluxFilled = 0;
+  bpmHistory.length = 0;
+  lastBpm = null;
+
+  isRecording = true;
+  document.getElementById('micBtn').classList.add('recording');
+  document.getElementById('micBtnIcon').textContent = '■';
+  document.getElementById('micBtnLabel').textContent = 'Stoppen';
+  setMicStatus('Läuft – Musik abspielen…', 'active');
+
+  processAudio();
+}
+
+function stopMic() {
+  if (!isRecording) return;
+  isRecording = false;
+  cancelAnimationFrame(animFrame);
+  if (micStream) micStream.getTracks().forEach(t => t.stop());
+  if (audioCtx) audioCtx.close();
+  document.getElementById('micBtn').classList.remove('recording');
+  document.getElementById('micBtnIcon').textContent = '▶';
+  document.getElementById('micBtnLabel').textContent = 'Starten';
+  setMicStatus('Gestoppt', '');
+  showBpm(null, 0);
+}
+
+function setMicStatus(msg, state) {
+  document.getElementById('micStatus').textContent = msg;
+  const dot = document.getElementById('micDot');
+  dot.className = 'dot' + (state ? ' ' + state : '');
+}
+
+// ─────────────────────────────────────────────
+//  Audio processing loop
+// ─────────────────────────────────────────────
+const fftData = new Uint8Array(2048);
+
+function processAudio() {
+  if (!isRecording) return;
+  animFrame = requestAnimationFrame(processAudio);
+
+  analyser.getByteFrequencyData(fftData);
+  const N = analyser.frequencyBinCount;
+
+  // 1. Spectral Flux (rectified)
+  let flux = 0;
+  for (let i = 0; i < N; i++) {
+    const diff = fftData[i] - prevFFT[i];
+    if (diff > 0) flux += diff;
+    prevFFT[i] = fftData[i];
+  }
+  flux /= N; // normalize
+
+  fluxBuffer[fluxHead] = flux;
+  fluxHead = (fluxHead + 1) % FLUX_BUF_SIZE;
+  if (fluxFilled < FLUX_BUF_SIZE) fluxFilled++;
+
+  // Need enough data
+  if (fluxFilled < 128) return;
+
+  // 2. Autocorrelation on flux buffer → dominant period
+  const bpmResult = estimateBpm();
+  if (bpmResult !== null) {
+    // 3. Smooth over history
+    bpmHistory.push(bpmResult.bpm);
+    if (bpmHistory.length > BPM_SMOOTH) bpmHistory.shift();
+    const smoothed = resolveHalfDouble(median(bpmHistory), lastBpm);
+    lastBpm = smoothed;
+    showBpm(smoothed, bpmResult.confidence);
+    if (bpmResult.confidence > 0.4) flashBeat();
+  }
+}
+
+function estimateBpm() {
+  const sampleRate = audioCtx.sampleRate;
+  // Each animation frame ≈ 1000/60 ms, but we measure in buffer slots
+  // We estimate hop time from sample rate and fft size
+  // hop ≈ fftSize / sampleRate (one full FFT per frame approximation)
+  const hopSec = analyser.fftSize / sampleRate;
+
+  // BPM range: 60–200 → period in seconds: 0.3–1.0
+  const minLag = Math.floor(0.25 / hopSec);
+  const maxLag = Math.ceil(1.05 / hopSec);
+
+  const buf = buildOrderedBuffer();
+  const len = buf.length;
+  if (len < maxLag * 2) return null;
+
+  // Mean for normalization
+  let mean = 0;
+  for (let i = 0; i < len; i++) mean += buf[i];
+  mean /= len;
+
+  // Autocorrelation
+  let bestLag = -1, bestVal = -Infinity;
+  for (let lag = minLag; lag <= Math.min(maxLag, len - 1); lag++) {
+    let r = 0;
+    const n = len - lag;
+    for (let i = 0; i < n; i++) {
+      r += (buf[i] - mean) * (buf[i + lag] - mean);
+    }
+    r /= n;
+    if (r > bestVal) { bestVal = r; bestLag = lag; }
+  }
+  if (bestLag < 0) return null;
+
+  // Variance for normalization
+  let variance = 0;
+  for (let i = 0; i < len; i++) variance += (buf[i] - mean) ** 2;
+  variance /= len;
+  if (variance < 1e-6) return null;
+
+  const confidence = Math.max(0, Math.min(1, bestVal / variance));
+  if (confidence < 0.05) return null;
+
+  const bpm = 60 / (bestLag * hopSec);
+  if (bpm < 58 || bpm > 205) return null;
+  return { bpm, confidence };
+}
+
+function buildOrderedBuffer() {
+  const size = fluxFilled;
+  const out = new Float32Array(size);
+  const start = fluxFilled < FLUX_BUF_SIZE ? 0 : fluxHead;
+  for (let i = 0; i < size; i++) {
+    out[i] = fluxBuffer[(start + i) % FLUX_BUF_SIZE];
+  }
+  return out;
+}
+
+function median(arr) {
+  const s = [...arr].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+function resolveHalfDouble(bpm, prev) {
+  if (prev === null) return bpm;
+  const double = bpm * 2;
+  const half   = bpm / 2;
+  if (double >= 60 && double <= 200 && Math.abs(double - prev) < Math.abs(bpm - prev)) return double;
+  if (half   >= 60 && half   <= 200 && Math.abs(half   - prev) < Math.abs(bpm - prev)) return half;
+  return bpm;
+}
+
+// ─────────────────────────────────────────────
+//  TAP mode
+// ─────────────────────────────────────────────
+function handleTap() {
+  const now = performance.now();
+  const btn = document.getElementById('tapBtn');
+
+  // Visual feedback
+  btn.classList.add('tapped');
+  setTimeout(() => btn.classList.remove('tapped'), 100);
+  flashBeat();
+
+  if (lastTapTime !== null) {
+    const interval = now - lastTapTime;
+    if (interval > 2500) {
+      // Too long pause → reset buffer
+      tapIntervals.length = 0;
+      tapCount = 1;
+    } else {
+      tapIntervals.push(interval);
+      if (tapIntervals.length > TAP_BUF) tapIntervals.shift();
+      tapCount++;
+    }
+  } else {
+    tapCount = 1;
+  }
+  lastTapTime = now;
+
+  refreshTapDisplay();
+
+  // Auto-reset timer: if no tap for 3s, clear lastTapTime
+  clearTimeout(window._tapResetTimer);
+  window._tapResetTimer = setTimeout(() => {
+    lastTapTime = null;
+  }, 3000);
+}
+
+function refreshTapDisplay() {
+  const countEl = document.getElementById('tapCount');
+  const hintEl  = document.getElementById('tapHint');
+
+  if (tapIntervals.length === 0) {
+    showBpm(null, 0);
+    hintEl.textContent = 'Mindestens 2 Taps nötig';
+    countEl.textContent = '';
+    return;
+  }
+
+  const avg = tapIntervals.reduce((a, b) => a + b, 0) / tapIntervals.length;
+  const bpm = 60000 / avg;
+
+  // Confidence: more taps = higher confidence
+  const confidence = Math.min(1, tapIntervals.length / TAP_BUF);
+  showBpm(bpm, confidence);
+
+  hintEl.textContent = 'Im Takt tippen';
+  countEl.textContent = `${tapIntervals.length + 1} Taps · ${tapIntervals.length < TAP_BUF ? 'noch ' + (TAP_BUF - tapIntervals.length) + ' für max. Genauigkeit' : 'volle Genauigkeit'}`;
+}
+
+function resetTap() {
+  tapIntervals.length = 0;
+  lastTapTime = null;
+  tapCount = 0;
+  clearTimeout(window._tapResetTimer);
+  showBpm(null, 0);
+  document.getElementById('tapHint').textContent = 'Mindestens 2 Taps nötig';
+  document.getElementById('tapCount').textContent = '';
+}
+
+// ─────────────────────────────────────────────
+//  PWA service worker
+// ─────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>
